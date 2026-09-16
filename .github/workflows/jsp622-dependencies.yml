@@ -1,0 +1,85 @@
+name: JSP622 pinned proof dependencies
+on:
+  push:
+    branches: [jsp-000622-formalization]
+    paths: [.github/workflows/jsp622-dependencies.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dependencies:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Fetch exact toolchain and sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 -o lean.tar.zst https://github.com/leanprover/lean4/releases/download/v4.30.0/lean-4.30.0-linux.tar.zst
+          tar --zstd -xf lean.tar.zst
+          echo "$PWD/lean-4.30.0-linux/bin" >> "$GITHUB_PATH"
+          git init mathlib4
+          git -C mathlib4 remote add origin https://github.com/leanprover-community/mathlib4.git
+          git -C mathlib4 fetch --depth 1 origin c5ea00351c28e24afc9f0f84379aa41082b1188f
+          git -C mathlib4 checkout --detach FETCH_HEAD
+          git init lrat-catcher
+          git -C lrat-catcher remote add origin https://github.com/leansolving/lrat-catcher.git
+          git -C lrat-catcher fetch --depth 1 origin 0991973ebd9797576a4046efd9a1479035369e47
+          git -C lrat-catcher checkout --detach FETCH_HEAD
+      - name: Fetch targeted Mathlib cache and build checker
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd mathlib4
+          lake exe cache get Mathlib/Combinatorics/SimpleGraph/Clique.lean Mathlib/Data/Fintype/EquivFin.lean Mathlib/Data/Finset/Powerset.lean Mathlib/Tactic/FinCases.lean Mathlib/Tactic/NormNum.lean
+          printf 'import Mathlib.Combinatorics.SimpleGraph.Clique\nimport Mathlib.Data.Fintype.EquivFin\nimport Mathlib.Data.Finset.Powerset\nimport Mathlib.Tactic.FinCases\nimport Mathlib.Tactic.NormNum\nexample : (Finset.univ : Finset (Fin 20)).card = 20 := by simp\n' > JspSmoke.lean
+          lake env lean JspSmoke.lean
+          cd ../lrat-catcher
+          lake build
+          cd ..
+          printf 'Lean v4.30.0\nMathlib c5ea00351c28e24afc9f0f84379aa41082b1188f\nLRAT-Catcher 0991973ebd9797576a4046efd9a1479035369e47\n' > DEPENDENCIES.txt
+          tar --zstd --exclude='*/.git' --exclude='*/.lake/build/bin' --exclude='*/.lake/build/ir' -cf jsp622-dependencies.tar.zst mathlib4 lrat-catcher DEPENDENCIES.txt
+          sha256sum jsp622-dependencies.tar.zst | tee DEPENDENCIES.sha256
+          split -b 180M -d -a 2 jsp622-dependencies.tar.zst deps.part.
+          ls -lh deps.part.*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jsp622-deps-part00
+          path: deps.part.00
+          compression-level: 0
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jsp622-deps-part01
+          path: deps.part.01
+          compression-level: 0
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jsp622-deps-part02
+          path: deps.part.02
+          compression-level: 0
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jsp622-deps-part03
+          path: deps.part.03
+          compression-level: 0
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jsp622-deps-part04
+          path: deps.part.04
+          compression-level: 0
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jsp622-deps-receipt
+          path: |
+            DEPENDENCIES.txt
+            DEPENDENCIES.sha256
+          retention-days: 7
