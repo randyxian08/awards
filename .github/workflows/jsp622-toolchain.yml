@@ -1,0 +1,61 @@
+name: JSP622 pinned Lean toolchain
+on:
+  push:
+    branches: [jsp-000622-formalization]
+    paths: [.github/workflows/jsp622-toolchain.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  toolchain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Download official pinned Lean release
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 -o lean-4.30.0-linux.tar.zst https://github.com/leanprover/lean4/releases/download/v4.30.0/lean-4.30.0-linux.tar.zst
+          sha256sum lean-4.30.0-linux.tar.zst | tee SHA256SUMS
+          tar --zstd -xf lean-4.30.0-linux.tar.zst
+          ./lean-4.30.0-linux/bin/lean --version | tee VERSION.txt
+          printf 'theorem toolchain_smoke_test : 2 + 2 = (4 : Nat) := by decide\n#print axioms toolchain_smoke_test\n' > Smoke.lean
+          ./lean-4.30.0-linux/bin/lean Smoke.lean | tee SMOKE.log
+          split -b 180M -d -a 2 lean-4.30.0-linux.tar.zst lean.part.
+          ls -lh lean.part.*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jsp622-lean430-part00
+          path: lean.part.00
+          compression-level: 0
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jsp622-lean430-part01
+          path: lean.part.01
+          compression-level: 0
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jsp622-lean430-part02
+          path: lean.part.02
+          compression-level: 0
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jsp622-lean430-part03
+          path: lean.part.03
+          compression-level: 0
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jsp622-toolchain-receipt
+          path: |
+            SHA256SUMS
+            VERSION.txt
+            SMOKE.log
+            Smoke.lean
+          retention-days: 7
