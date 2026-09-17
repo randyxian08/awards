@@ -1,0 +1,93 @@
+name: JSP000883 proof work
+on:
+  push:
+    branches: [work/jsp000883-complete-proof]
+    paths:
+      - '.github/workflows/jsp000883-proof-work.yml'
+      - 'proof-work/jsp000883/**'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Lean and prepare mathlib
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/jsp-toolchain /tmp/jsp-env
+          curl -fL --retry 3 https://github.com/leanprover/lean4/releases/download/v4.33.0/lean-4.33.0-linux.tar.zst -o /tmp/jsp-toolchain/lean.tar.zst
+          echo '4b3fb03c29a1e0a253fb1d11f9bae3725f19a0dc6fc09b3ea16d2c9df3349e2c  /tmp/jsp-toolchain/lean.tar.zst' | sha256sum -c -
+          tar --use-compress-program=unzstd -xf /tmp/jsp-toolchain/lean.tar.zst -C /tmp/jsp-toolchain
+          export PATH=/tmp/jsp-toolchain/lean-4.33.0-linux/bin:$PATH
+          echo /tmp/jsp-toolchain/lean-4.33.0-linux/bin >> "$GITHUB_PATH"
+          cd /tmp/jsp-env
+          printf 'leanprover/lean4:v4.33.0\n' > lean-toolchain
+          printf 'name = "jsp000883_work"\nversion = "0.1.0"\n[[require]]\nname = "mathlib"\ngit = "https://github.com/leanprover-community/mathlib4.git"\nrev = "db584cd6d46c92f209a44c0f1c829460d327499d"\n' > lakefile.toml
+          lake update
+          lake exe cache get
+          printf 'import Mathlib\n#check Nat.factorization_mul\n#check Nat.choose_mul_factorial_mul_factorial\n#check Finset.lcm\n' > Probe.lean
+          lake env lean Probe.lean | tee /tmp/probe.log
+      - name: Compile current proof sources when present
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f proof-work/jsp000883/Main.lean ]; then
+            cp -a proof-work/jsp000883/. /tmp/jsp-env/
+            cd /tmp/jsp-env
+            lake env lean -o Main.olean Main.lean 2>&1 | tee /tmp/proof-build.log
+          fi
+      - name: Export only public dependencies for reproducible local checking
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p export
+          if [ -f /tmp/jsp-toolchain/lean.tar.zst ]; then
+            split -b 250M -d /tmp/jsp-toolchain/lean.tar.zst export/lean.part
+          fi
+          if [ -d /tmp/jsp-env/.lake/packages/mathlib/Mathlib ]; then
+            tar --exclude='*/.git' --exclude='*.c' --exclude='*.o' --exclude='*.a' --exclude='*.trace' --exclude='*.ilean' -C /tmp/jsp-env -cf - .lake/packages lake-manifest.json lakefile.toml lean-toolchain | zstd -T2 -3 | split -b 250M -d - export/mathlib.part
+          fi
+          cp /tmp/probe.log export/ 2>/dev/null || true
+          cp /tmp/proof-build.log export/ 2>/dev/null || true
+          sha256sum export/* | tee export/SHA256SUMS
+          du -h export/*
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: lean-00, path: export/lean.part00, retention-days: 7, compression-level: 0}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: lean-01, path: export/lean.part01, retention-days: 7, compression-level: 0}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: lean-02, path: export/lean.part02, retention-days: 7, compression-level: 0}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: mathlib-00, path: export/mathlib.part00, retention-days: 7, compression-level: 0}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: mathlib-01, path: export/mathlib.part01, retention-days: 7, compression-level: 0}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: mathlib-02, path: export/mathlib.part02, retention-days: 7, compression-level: 0}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: mathlib-03, path: export/mathlib.part03, retention-days: 7, compression-level: 0}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: mathlib-04, path: export/mathlib.part04, retention-days: 7, compression-level: 0}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: mathlib-05, path: export/mathlib.part05, retention-days: 7, compression-level: 0}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: mathlib-06, path: export/mathlib.part06, retention-days: 7, compression-level: 0}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: mathlib-07, path: export/mathlib.part07, retention-days: 7, compression-level: 0}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: dependency-manifest, path: export/SHA256SUMS, retention-days: 7}
