@@ -1,0 +1,191 @@
+name: Prepare pinned Lean environment
+on:
+  push:
+    branches: [codex/jsp000883-lean-environment]
+    paths: [.github/workflows/jsp000883-lean-environment.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch and verify official toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p export/project parts
+          curl --fail --location --retry 3 -o lean.tar.zst https://github.com/leanprover/lean4/releases/download/v4.33.0/lean-4.33.0-linux.tar.zst
+          echo '4b3fb03c29a1e0a253fb1d11f9bae3725f19a0dc6fc09b3ea16d2c9df3349e2c  lean.tar.zst' | sha256sum -c -
+          tar --zstd -xf lean.tar.zst -C export
+          echo "$GITHUB_WORKSPACE/export/lean-4.33.0-linux/bin" >> "$GITHUB_PATH"
+          rm lean.tar.zst
+      - name: Prepare pinned Mathlib and public PNT dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd export/project
+          printf 'leanprover/lean4:v4.33.0\n' > lean-toolchain
+          cat > lakefile.lean <<'LEAN'
+          import Lake
+          open Lake DSL
+          package jsp000883 where
+          require mathlib from git "https://github.com/leanprover-community/mathlib4.git" @ "db584cd6d46c92f209a44c0f1c829460d327499d"
+          lean_lib JSP000883
+          lean_lib PrimeNumberTheoremAnd
+          LEAN
+          lake update
+          lake exe cache get
+          python3 - <<'PY'
+          import hashlib, json, pathlib, re, urllib.request
+          base = 'https://raw.githubusercontent.com/plby/lean-proofs/8822f7ddef30fadbd92e1c6ab4ed897af356af5e/src/latest/'
+          pending = ['PrimeNumberTheoremAnd.Consequences']
+          seen = {}
+          while pending:
+              mod = pending.pop()
+              if mod in seen:
+                  continue
+              rel = mod.replace('.', '/') + '.lean'
+              data = urllib.request.urlopen(base + rel).read()
+              p = pathlib.Path(rel)
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_bytes(data)
+              seen[mod] = {'path': rel, 'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data), 'source': base + rel}
+              for line in data.decode().splitlines():
+                  match = re.match(r'^\s*(?:(?:public|meta|private)\s+)?import\s+(.+)', line)
+                  if match:
+                      for dep in match.group(1).split('--')[0].split():
+                          if dep.startswith('PrimeNumberTheoremAnd.'):
+                              pending.append(dep)
+          pathlib.Path('pnt-source-manifest.json').write_text(json.dumps(seen, indent=2) + '\n')
+          print('Fetched', len(seen), 'unchanged public PNT modules.')
+          PY
+          lean --version | tee toolchain-version.txt
+          git -C .lake/packages/mathlib rev-parse HEAD | tee mathlib-revision.txt
+      - name: Pack environment in bounded-size parts
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar --zstd -cf environment.tar.zst export
+          split -b 240M -d -a 2 environment.tar.zst parts/part
+          test "$(find parts -name 'part*' | wc -l)" -le 16
+          sha256sum parts/part* > parts/SHA256SUMS
+          ls -lh parts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lean-environment-manifest
+          path: parts/SHA256SUMS
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part00') != ''
+        with:
+          name: lean-environment-00
+          path: parts/part00
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part01') != ''
+        with:
+          name: lean-environment-01
+          path: parts/part01
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part02') != ''
+        with:
+          name: lean-environment-02
+          path: parts/part02
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part03') != ''
+        with:
+          name: lean-environment-03
+          path: parts/part03
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part04') != ''
+        with:
+          name: lean-environment-04
+          path: parts/part04
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part05') != ''
+        with:
+          name: lean-environment-05
+          path: parts/part05
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part06') != ''
+        with:
+          name: lean-environment-06
+          path: parts/part06
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part07') != ''
+        with:
+          name: lean-environment-07
+          path: parts/part07
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part08') != ''
+        with:
+          name: lean-environment-08
+          path: parts/part08
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part09') != ''
+        with:
+          name: lean-environment-09
+          path: parts/part09
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part10') != ''
+        with:
+          name: lean-environment-10
+          path: parts/part10
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part11') != ''
+        with:
+          name: lean-environment-11
+          path: parts/part11
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part12') != ''
+        with:
+          name: lean-environment-12
+          path: parts/part12
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part13') != ''
+        with:
+          name: lean-environment-13
+          path: parts/part13
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part14') != ''
+        with:
+          name: lean-environment-14
+          path: parts/part14
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('parts/part15') != ''
+        with:
+          name: lean-environment-15
+          path: parts/part15
+          compression-level: 0
+          retention-days: 2
