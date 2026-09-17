@@ -1,0 +1,55 @@
+name: JSP000883 PNT source closure
+on:
+  push:
+    branches: [work/jsp000883-complete-proof]
+    paths: ['.github/workflows/jsp000883-pnt-sources.yml']
+permissions:
+  contents: read
+jobs:
+  sources:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fetch public pinned proof modules without modification
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import concurrent.futures, hashlib, json, pathlib, re, time, urllib.request
+          root = pathlib.Path('pnt-sources'); root.mkdir()
+          sha = '8822f7ddef30fadbd92e1c6ab4ed897af356af5e'
+          base = f'https://raw.githubusercontent.com/plby/lean-proofs/{sha}/src/latest/'
+          pending = {'PrimeNumberTheoremAnd.Consequences'}
+          seen = set(); manifest = []; external = set()
+          def fetch(module):
+              path = module.replace('.', '/') + '.lean'
+              for attempt in range(4):
+                  try:
+                      with urllib.request.urlopen(base + path, timeout=45) as response:
+                          return module, path, response.read()
+                  except Exception:
+                      if attempt == 3: raise
+                      time.sleep(2 ** attempt)
+          while pending:
+              todo = sorted(pending - seen); pending = set()
+              with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                  for module, path, data in pool.map(fetch, todo):
+                      dest = root / path; dest.parent.mkdir(parents=True, exist_ok=True); dest.write_bytes(data)
+                      seen.add(module)
+                      manifest.append({'module':module, 'path':path, 'url':base+path, 'bytes':len(data), 'sha256':hashlib.sha256(data).hexdigest()})
+                      text = data.decode('utf-8')
+                      for dep in re.findall(r'^\s*(?:(?:public|private)\s+)?import\s+([A-Za-z0-9_.]+)', text, re.M):
+                          if dep.startswith(('Mathlib', 'Lean', 'Std', 'Batteries', 'Aesop', 'Qq')): continue
+                          if dep not in seen: pending.add(dep)
+                      print(module, len(data), flush=True)
+          (root/'SOURCE_MANIFEST.json').write_text(json.dumps({'repository':'plby/lean-proofs','commit':sha,'files':sorted(manifest,key=lambda x:x['path'])},indent=2)+'\n')
+          for name, url in [('UPSTREAM_LICENSE','https://raw.githubusercontent.com/AlexKontorovich/PrimeNumberTheoremAnd/a5040887e6bb24f7c201db8568e7755c138b3878/LICENSE'), ('PLBY_LICENSE',base+'LICENSE')]:
+              try:
+                  with urllib.request.urlopen(url,timeout=30) as r: (root/name).write_bytes(r.read())
+              except Exception as e: print('License fetch failed:',name,str(e))
+          print('SOURCE_MODULES',len(seen))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinned-pnt-sources
+          path: pnt-sources/
+          retention-days: 7
