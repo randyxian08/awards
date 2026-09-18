@@ -1,0 +1,46 @@
+name: JSP404 pinned Lean runtime
+
+on:
+  push:
+    branches: [research/jsp404-lean-verification-v9]
+    paths: [.github/workflows/jsp404-lean-runtime.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Fetch official Lean 4.19.0 and test the compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts work
+          curl --fail --location --retry 3 \
+            https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst \
+            --output artifacts/lean-4.19.0-linux.tar.zst
+          sha256sum artifacts/lean-4.19.0-linux.tar.zst > artifacts/runtime-sha256.txt
+          tar --zstd -xf artifacts/lean-4.19.0-linux.tar.zst -C work
+          LEAN="$PWD/work/lean-4.19.0-linux/bin/lean"
+          "$LEAN" --version | tee artifacts/lean-version.txt
+          cat > work/Sanity.lean <<'LEAN'
+          import Lean.Elab.Tactic.Omega
+          theorem arithmetic_sanity (a b : Int) (h : a < b) : a + 1 <= b := by omega
+          #print axioms arithmetic_sanity
+          LEAN
+          "$LEAN" --trust=0 work/Sanity.lean | tee artifacts/compiler-sanity.txt
+          printf 'theorem invalid_control : (0 : Nat) = 1 := rfl\n' > work/Invalid.lean
+          if "$LEAN" --trust=0 work/Invalid.lean > artifacts/negative-control.txt 2>&1; then
+            echo 'ERROR: compiler accepted a false control statement' >&2
+            exit 1
+          fi
+          printf 'Compiler runtime only. This is NOT a proof of JSP-000404.\n' > artifacts/SCOPE.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: jsp404-lean419-runtime
+          path: artifacts/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
