@@ -1,0 +1,53 @@
+name: JSP404 pinned finite combinatorics
+
+on:
+  push:
+    branches: [research/jsp404-lean-verification-v9]
+    paths: [.github/workflows/jsp404-mathlib-subset.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  finite-library:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Fetch pinned toolchain and selected Mathlib dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work artifacts
+          curl --fail --location --retry 3 https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst -o work/lean.tar.zst
+          printf '6fe3ce97a58f44e2b3567d455b994eacec5e41abad85522d7b  dummy\n' > /dev/null
+          echo '6fe3ce97a58f44e2b3567d455b994eacec5bfe9ae7774f2a573444480ba813fe  work/lean.tar.zst' | sha256sum -c -
+          tar --zstd -xf work/lean.tar.zst -C work
+          export PATH="$PWD/work/lean-4.19.0-linux/bin:$PATH"
+          git clone --depth 1 --branch v4.19.0 https://github.com/leanprover-community/mathlib4.git work/mathlib
+          test "$(git -C work/mathlib rev-parse HEAD)" = c44e0c8ee63ca166450922a373c7409c5d26b00b
+          cd work/mathlib
+          lake exe cache get Mathlib/Data/Fintype/Card.lean Mathlib/Data/Finset/Card.lean Mathlib/Data/Finset/Powerset.lean Mathlib/Data/Fin/Tuple/Basic.lean Mathlib/Tactic/IntervalCases.lean Mathlib/Tactic/NormNum.lean Mathlib/Tactic/FinCases.lean
+          cat > DependencySanity.lean <<'LEAN'
+          import Mathlib.Data.Fintype.Card
+          import Mathlib.Data.Finset.Powerset
+          import Mathlib.Data.Fin.Tuple.Basic
+          import Mathlib.Tactic.IntervalCases
+          import Mathlib.Tactic.NormNum
+          import Mathlib.Tactic.FinCases
+          theorem sanity : Fintype.card (Fin 11) = 11 := by simp
+          #print axioms sanity
+          LEAN
+          lake env lean --trust=0 DependencySanity.lean | tee ../../artifacts/dependency-sanity.txt
+          git rev-parse HEAD > ../../artifacts/mathlib-commit.txt
+          lake env printenv LEAN_PATH > ../../artifacts/original-lean-path.txt
+          cd ../..
+          tar --exclude=.git --exclude='*.ilean' --exclude='*.trace' --exclude='*.hash' --exclude='*.c' --exclude='*.o' --exclude='*.a' --exclude='*.so' --exclude='*/.lake/build/bin' --exclude='*/.lake/build/ir' -czf artifacts/mathlib419-finite-subset.tar.gz -C work mathlib
+          sha256sum artifacts/mathlib419-finite-subset.tar.gz > artifacts/mathlib-subset-sha256.txt
+          printf 'Dependencies only. This is NOT a proof of JSP-000404.\n' > artifacts/SCOPE.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: jsp404-mathlib419-finite-subset
+          path: artifacts/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
