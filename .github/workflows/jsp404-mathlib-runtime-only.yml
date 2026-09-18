@@ -35,11 +35,10 @@ jobs:
           import Mathlib.Tactic.FinCases
           import Mathlib.Tactic.NormNum
           import Mathlib.Tactic.Linarith
-          example (n : Nat) : Fintype.card (Fin n → Bool) = 2^n := by simp
           theorem smoke_identity (a b : Int) : (a+b)^2=a^2+2*a*b+b^2 := by ring
           #print axioms smoke_identity
           LEAN
-          lake env lean --trust=0 RuntimeSmoke.lean > ../transfer/mathlib-smoke.log 2>&1
+          if ! lake env lean --trust=0 RuntimeSmoke.lean > ../transfer/mathlib-smoke.log 2>&1; then cat ../transfer/mathlib-smoke.log; exit 1; fi
           ! grep -q sorryAx ../transfer/mathlib-smoke.log
           lake env printenv LEAN_PATH > ../transfer/lean-path.txt
           git rev-parse HEAD > ../transfer/mathlib-commit.txt
@@ -56,7 +55,7 @@ jobs:
           with tarfile.open('mathlib-finite.tar.gz','w:gz',compresslevel=1) as t: t.add('mathlib',filter=filt)
           parts=[]
           with open('mathlib-finite.tar.gz','rb') as f:
-              for i in range(8):
+              for i in range(3):
                   b=f.read(400*1024*1024)
                   if not b:break
                   p=out/f'mathlib-finite.part-{i:02d}';p.write_bytes(b)
@@ -66,6 +65,7 @@ jobs:
           print(json.dumps(parts))
           PY
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: jsp404-mathlib-finite-receipt
           path: |
