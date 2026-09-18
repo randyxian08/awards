@@ -1,0 +1,98 @@
+name: JSP404 finite Mathlib preparation only
+on:
+  push:
+    branches: [research/jsp404-runtime-only-20260918]
+    paths: [.github/workflows/jsp404-mathlib-runtime-only.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Fetch pinned compiler and narrowly requested library caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir runtime transfer
+          curl --fail --location --retry 3 --max-time 300 https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst -o lean.tar.zst
+          echo '6fe3ce97a58f44e2b3567d455b994eacec5bfe9ae7774f2a573444480ba813fe  lean.tar.zst' | sha256sum -c -
+          tar --zstd -xf lean.tar.zst --strip-components=1 -C runtime
+          export PATH="$PWD/runtime/bin:$PATH"
+          test "$(lean --githash)" = 6caaee842e9495688c1567e78c0e68dbb96942aa
+          git init mathlib
+          git -C mathlib remote add origin https://github.com/leanprover-community/mathlib4.git
+          git -C mathlib fetch --depth=1 origin c44e0c8ee63ca166450922a373c7409c5d26b00b
+          git -C mathlib checkout --detach FETCH_HEAD
+          cd mathlib
+          lake exe cache get Mathlib/Data/Fintype/Card.lean Mathlib/Data/Fintype/Pi.lean Mathlib/Data/Finset/Card.lean Mathlib/Algebra/BigOperators/Group/Finset/Basic.lean Mathlib/Tactic/Ring.lean Mathlib/Tactic/FinCases.lean Mathlib/Tactic/NormNum.lean Mathlib/Tactic/Linarith.lean
+          cat > RuntimeSmoke.lean <<'LEAN'
+          import Mathlib.Data.Fintype.Pi
+          import Mathlib.Data.Fintype.Card
+          import Mathlib.Data.Finset.Card
+          import Mathlib.Algebra.BigOperators.Group.Finset.Basic
+          import Mathlib.Tactic.Ring
+          import Mathlib.Tactic.FinCases
+          import Mathlib.Tactic.NormNum
+          import Mathlib.Tactic.Linarith
+          example (n : Nat) : Fintype.card (Fin n → Bool) = 2^n := by simp
+          theorem smoke_identity (a b : Int) : (a+b)^2=a^2+2*a*b+b^2 := by ring
+          #print axioms smoke_identity
+          LEAN
+          lake env lean --trust=0 RuntimeSmoke.lean > ../transfer/mathlib-smoke.log 2>&1
+          ! grep -q sorryAx ../transfer/mathlib-smoke.log
+          lake env printenv LEAN_PATH > ../transfer/lean-path.txt
+          git rev-parse HEAD > ../transfer/mathlib-commit.txt
+          cp lake-manifest.json ../transfer/lake-manifest.json
+          cd ..
+          python3 - <<'PY'
+          import tarfile,pathlib,json,hashlib,os
+          out=pathlib.Path('transfer')
+          def filt(x):
+              p=pathlib.PurePosixPath(x.name)
+              if '.git' in p.parts or '__pycache__' in p.parts or p.suffix in {'.c','.o','.a','.trace','.ilean','.ttf','.otf','.woff','.woff2'}: return None
+              if x.issym() or x.islnk(): return None
+              return x
+          with tarfile.open('mathlib-finite.tar.gz','w:gz',compresslevel=1) as t: t.add('mathlib',filter=filt)
+          parts=[]
+          with open('mathlib-finite.tar.gz','rb') as f:
+              for i in range(8):
+                  b=f.read(400*1024*1024)
+                  if not b:break
+                  p=out/f'mathlib-finite.part-{i:02d}';p.write_bytes(b)
+                  parts.append({'file':p.name,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()})
+              if f.read(1):raise RuntimeError('Too many parts')
+          out.joinpath('receipt.json').write_text(json.dumps({'scope':'Pinned library environment ONLY, no JSP proof result.','mathlib_commit':'c44e0c8ee63ca166450922a373c7409c5d26b00b','lean_commit':'6caaee842e9495688c1567e78c0e68dbb96942aa','parts':parts,'repository':os.environ['GITHUB_REPOSITORY'],'commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'full_problem_proved':False},indent=2))
+          print(json.dumps(parts))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jsp404-mathlib-finite-receipt
+          path: |
+            transfer/receipt.json
+            transfer/mathlib-smoke.log
+            transfer/lean-path.txt
+            transfer/mathlib-commit.txt
+            transfer/lake-manifest.json
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jsp404-mathlib-finite-part-00
+          path: transfer/mathlib-finite.part-00
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jsp404-mathlib-finite-part-01
+          path: transfer/mathlib-finite.part-01
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jsp404-mathlib-finite-part-02
+          path: transfer/mathlib-finite.part-02
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: ignore
